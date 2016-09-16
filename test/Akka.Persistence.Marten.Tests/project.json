@@ -1,16 +1,32 @@
 ﻿{
   "testRunner": "xunit",
-  
+
+  "buildOptions": {
+    "debugType": "portable",
+    "copyToOutput": {
+      "include": [ "appsettings.json", "appsettings.user.json" ]
+    }
+  },
+
   "dependencies": {
-    "Akka.Persistence.Marten": {"target": "project"},
-    "xunit": "2.1.0",
-    "dotnet-test-xunit": "1.0.0-rc2-build10025",
+    "Akka.Persistence.Marten": { "target": "project" },
+    "Newtonsoft.Json": "9.0.1",
+    "xunit": "2.2.0-beta2-build3300",
+    "dotnet-test-xunit": "2.2.0-preview2-build1029",
     "Akka.TestKit.Xunit2": "1.1.1",
     "FluentAssertions": "4.14.0",
-    "xunit.runner.visualstudio": "2.1.0"
+    "xunit.runner.visualstudio": "2.1.0",
+    "Akka.Persistence.TestKit": "1.1.1.28-beta",
+    "Microsoft.Extensions.Configuration.Binder": "1.0.0",
+    "Microsoft.Extensions.Configuration.Json": "1.0.0",
+    "Microsoft.Extensions.Configuration.UserSecrets": "1.0.0"
   },
 
   "frameworks": {
-    "net4.6": {}
+    "net46": {
+      "dependencies": {
+        "Microsoft.NETCore.Platforms": "1.0.1"
+      }
+    }
   }
 }

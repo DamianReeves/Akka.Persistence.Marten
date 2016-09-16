@@ -9,6 +9,7 @@
   },  
 
   "buildOptions": {
+    "debugType": "portable",
     "xmlDoc": "true",
     "embed": ["marten.conf"]
   },
@@ -28,11 +29,12 @@
 },
 
   "dependencies": {
+    "Newtonsoft.Json": "9.0.1",
+    "Marten": "1.0.0",
     "Akka.Persistence": "1.1.1.28-beta"
   },
 
   "frameworks": {
-    "net46":{        
-    }
+    "net46": {}
   }
 }
