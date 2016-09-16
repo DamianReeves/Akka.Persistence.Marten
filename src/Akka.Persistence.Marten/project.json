@@ -9,7 +9,8 @@
   },  
 
   "buildOptions": {
-      "xmlDoc":"true"
+    "xmlDoc": "true",
+    "embed": ["marten.conf"]
   },
 
   "configurations": {
