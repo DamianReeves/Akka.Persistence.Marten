@@ -1,0 +1,37 @@
+﻿{
+  "version": "0.1.1-alpha-*",
+  "authors": ["DamianReeves","Akka.Persistence.Marten Contributors"],
+
+  "packOptions": {
+      "tags": ["persistence", "eventsource", "marten", "akka"],
+      "projectUrl":"https://github.com/DamianReeves/Akka.Persistence.Marten",
+      "licenseUrl": "https://opensource.org/licenses/MIT"
+  },  
+
+  "buildOptions": {
+      "xmlDoc":"true"
+  },
+
+  "configurations": {
+        "Debug":{
+            "buildOptions": {
+                "define": ["DEBUG", "TRACE", "CHECKED"]
+            }
+        },
+        "Release": {
+        "buildOptions": {
+            "define": [ "RELEASE", "TRACE" ],
+            "optimize": true
+        }
+    }
+},
+
+  "dependencies": {
+    "Akka.Persistence": "1.1.1.28-beta"
+  },
+
+  "frameworks": {
+    "net46":{        
+    }
+  }
+}
