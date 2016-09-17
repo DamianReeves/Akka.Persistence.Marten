@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Akka.Actor;
 using Akka.Persistence.Journal;
@@ -18,7 +19,7 @@ namespace Akka.Persistence.Marten.Journal
     public class MartenJournal : AsyncWriteJournal
     {
         private Lazy<DocumentStore> _store;
-        //private Lazy<Serializer> _serializer;
+        private Lazy<Serializer> _serializer;
 
         /// <summary>
         /// Creates a new instance of the <see cref="MartenJournal"/>.
@@ -40,10 +41,13 @@ namespace Akka.Persistence.Marten.Journal
                     _.Connection(Settings.ConnectionString);
                     //
                     _.AutoCreateSchemaObjects = Settings.AutoCreateSchemaObjects;
+
+                    _.Events.AddEventType(typeof(JournalEntryAdded));
+                    _.Events.InlineProjections.AggregateStreamsWith<JournalMetadataEntry>();
                 });
             });
 
-            //_serializer = new Lazy<Serializer>(() => _system.Serialization.FindSerializerForType(typeof(JournalEntry)));
+            _serializer = new Lazy<Serializer>(() => Context.System.Serialization.FindSerializerForType(typeof(JournalEntryAdded)));
         }
 
         public override async Task ReplayMessagesAsync(IActorContext context, string persistenceId, long fromSequenceNr, long toSequenceNr, long max,
@@ -51,21 +55,24 @@ namespace Akka.Persistence.Marten.Journal
         {
             // Limit allows only integer
             var limitValue = max >= int.MaxValue ? int.MaxValue : (int)max;
+            // Do not replay messages if limit equal zero
+            if (limitValue == 0)
+                return;
+
             var stream = PersistenceIdToStream(persistenceId);
             using (var session = _store.Value.LightweightSession())
             {
                 //var streamState = session.Events.FetchStreamState(stream);
                 //streamState.
-                var events = await session.Events.QueryAllRawEvents()
-                    .Where(x => x.StreamId == stream)
-                    .Where(x => x.Version >= fromSequenceNr)
-                    .Where(x => x.Version <= toSequenceNr)
+                var events = await session.Events.QueryRawEventDataOnly<JournalEntryAdded>()
+                    .Where(x=>x.PersistenceId == persistenceId && x.SequenceNr >= fromSequenceNr && x.SequenceNr <= toSequenceNr && x.IsDeleted == false)
                     .Take(limitValue)
                     .ToListAsync();
 
                 foreach (var @event in events)
                 {
-                    //@event.Data
+                    var persistent = ToPersistenceRepresentation(@event, context.Sender);
+                    recoveryCallback(persistent);
                 }
             }
         }
@@ -75,37 +82,42 @@ namespace Akka.Persistence.Marten.Journal
             var stream = PersistenceIdToStream(persistenceId);
             using (var session = _store.Value.OpenSession())
             {
-                var state = await session.Events.FetchStreamStateAsync(stream);
-                return state.Version;
+                var metadata = await session.Query<JournalMetadataEntry>()
+                    .FirstOrDefaultAsync(x=>x.PersistenceId == persistenceId);
+
+                return metadata?.SequenceNr ?? 0;
+
+                //var state = await session.Events.FetchStreamStateAsync(stream);
+                //return state.Version;
             }
         }
 
         protected override async Task<IImmutableList<Exception>> WriteMessagesAsync(IEnumerable<AtomicWrite> messages)
         {
-            var exceptions = ImmutableList<Exception>.Empty;
-            using (var session = _store.Value.OpenSession())
+            var messageList = messages.ToList();
+            var groupedTasks = messageList.GroupBy(x => x.PersistenceId).ToDictionary(g => g.Key, async g =>
             {
-                try
-                {
-                    foreach (var message in messages)
-                    {
-                        var stream = PersistenceIdToStream(message.PersistenceId);
-                        var persistRepresentation = (IPersistentRepresentation) message.Payload;
-                        //TODO: We need to work through situations where the serializer is not sending JSON
-                        var eventData = persistRepresentation.Payload; //Assuming JSON for now
-                        session.Events.Append(stream, eventData);
-                        session.Events.S
-                    }
+                var persistentMessages = g.SelectMany(aw => (IImmutableList<IPersistentRepresentation>)aw.Payload).ToList();
+                var eventsToSave = persistentMessages.Select(ToJournalEntryAdded).Cast<object>().ToArray();
 
+                var persistenceId = g.Key;
+                var stream = PersistenceIdToStream(persistenceId);
+
+                using (var session = _store.Value.OpenSession())
+                {
+                    session.Events.Append(stream, eventsToSave);
                     await session.SaveChangesAsync();
+                }
+            });
 
-                }
-                catch (Exception ex)
-                {
-                    exceptions = exceptions.Add(ex);
-                }
-            }
-            return exceptions;
+            return await Task<IImmutableList<Exception>>.Factory.ContinueWhenAll(
+                    groupedTasks.Values.ToArray(),
+                    tasks => messageList.Select(
+                        m =>
+                        {
+                            var task = groupedTasks[m.PersistenceId];
+                            return task.IsFaulted ? TryUnwrapException(task.Exception) : null;
+                        }).ToImmutableList());
         }
 
 
@@ -114,18 +126,37 @@ namespace Akka.Persistence.Marten.Journal
             var stream = PersistenceIdToStream(persistenceId);
             using (var session = _store.Value.LightweightSession())
             {
-                var evt = await session.Events.QueryAllRawEvents()
-                    .Where(x => x.StreamId == stream)
-                    .Where(x => x.Version == toSequenceNr)
-                    .FirstOrDefaultAsync();
+                var events = await session.Events.QueryRawEventDataOnly<JournalEntryAdded>()
+                    .Where(e=>e.SequenceNr <= toSequenceNr)
+                    .ToListAsync();
 
-                if (evt != null)
+                foreach (var @event in events)
                 {
-                    session.Delete(evt);
+                    //session.Delete(@event);
+                    @event.IsDeleted = true;
                 }
+
+                await session.SaveChangesAsync();
             }
         }
 
         private Guid PersistenceIdToStream(string persistenceId) => GuidUtility.Create(GuidUtility.IsoOidNamespace, persistenceId);
+        private JournalEntryAdded ToJournalEntryAdded(IPersistentRepresentation message)
+        {
+            return new JournalEntryAdded
+            {
+                Id = message.PersistenceId + "_" + message.SequenceNr,
+                IsDeleted = message.IsDeleted,
+                Payload = message.Payload,
+                PersistenceId = message.PersistenceId,
+                SequenceNr = message.SequenceNr,
+                Manifest = message.Manifest
+            };
+        }
+
+        private Persistent ToPersistenceRepresentation(JournalEntryAdded entryAdded, IActorRef sender)
+        {
+            return new Persistent(entryAdded.Payload, entryAdded.SequenceNr, entryAdded.PersistenceId, entryAdded.Manifest, entryAdded.IsDeleted, sender);
+        }        
     }
 }
