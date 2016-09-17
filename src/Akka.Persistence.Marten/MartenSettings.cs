@@ -1,5 +1,6 @@
 ﻿using System;
 using Akka.Configuration;
+using Marten;
 
 namespace Akka.Persistence.Marten
 {
@@ -15,12 +16,30 @@ namespace Akka.Persistence.Marten
         protected MartenSettings(Config config)
         {
             ConnectionString = config?.GetString("connection-string");
+            AutoCreateSchemaObjects = GetAutoCreateSetting(config);
         }
 
         /// <summary>
-        /// Connection string used to access Marten (this is a PostgreSql connection string), also specifies the database.
+        /// Gets the connection string used to access Marten (this is a PostgreSql connection string), also specifies the database.
         /// </summary>
-        public string ConnectionString { get; private set; }
+        public string ConnectionString { get; }
+
+        /// <summary>
+        /// Gets the <see cref="AutoCreate"/> settings for Marten schemas.
+        /// </summary>
+        public AutoCreate AutoCreateSchemaObjects { get; }
+
+        private AutoCreate GetAutoCreateSetting(Config config)
+        {
+            var value = AutoCreate.None;
+            var setting = config?.GetString("auto-create-schema-objects");
+            if (setting != null)
+            {
+                Enum.TryParse(setting, true, out value);
+            }
+
+            return value;            
+        }
     }
 
     /// <summary>

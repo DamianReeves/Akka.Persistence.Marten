@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using FluentAssertions;
+using Marten;
 using Xunit;
 
 namespace Akka.Persistence.Marten.Tests
@@ -16,6 +17,7 @@ namespace Akka.Persistence.Marten.Tests
             var martenPersistence = MartenPersistence.Get(Sys);
 
             martenPersistence.JournalSettings.ConnectionString.Should().BeEmpty();
+            martenPersistence.JournalSettings.AutoCreateSchemaObjects.Should().Be(AutoCreate.All);
         }
 
         [Fact]
@@ -24,6 +26,7 @@ namespace Akka.Persistence.Marten.Tests
             var martenPersistence = MartenPersistence.Get(Sys);
 
             martenPersistence.SnapshotSettings.ConnectionString.Should().BeEmpty();
+            martenPersistence.SnapshotSettings.AutoCreateSchemaObjects.Should().Be(AutoCreate.All);
         }
     }
 }
